@@ -11,11 +11,15 @@ function [x_est, mu_est] = imm2(x0, P0, zv, F1, H1, Q1, F2, H2, Q2, R, mu, M)
   for i=1:length(zv)
     z = zv(i, :)';
 
-    % 1 - Calculation of the mixing probabilities
-    % cbar is the total probability, after interaction,
-    % that the target is in state j. We use it as the
-    % normalization constant.
+    % 1 - Calcula das probabilidades de mistura
+    % Neste etapa calculamentos a probabilidade das 
+    % transições entre estados dado a medida - u(k-1/k-1)
+
     cbar = mu*M;
+    % cbar é probabilidade total de que o sistema esteja no 
+    % no modelo j (Estado da cadeia de Markov). 
+    % Estes valores serviram com a constante de normalização
+    
 
     omega = zeros(size(M));
     for j=1:length(M)
@@ -24,9 +28,10 @@ function [x_est, mu_est] = imm2(x0, P0, zv, F1, H1, Q1, F2, H2, Q2, R, mu, M)
       end
     end
 
-    % 2. Mixing
+    % 2. Mistura
 
-    % compute mixed initial conditions
+    % Misturamos as estimativas com base na probabilidade 
+    % de transição de estado
     w1 = omega(:, 1);
     x1mix = zeros(length(x0), 1);
     x1mix = x1*w1(1) + x2*w1(2);
@@ -44,36 +49,35 @@ function [x_est, mu_est] = imm2(x0, P0, zv, F1, H1, Q1, F2, H2, Q2, R, mu, M)
 
     % 3 Mode-matched filtering
 
-    % perform predict step using the mixed initial conditions
+    % Passo de predição do filtro 1 - Com as estimativas misturadas
     [x1, P1] = kalman_predict(F1, Q1, 0, 0, x1mix, P1mix);
 
-    % Update in kalman filter 1
+    % Passo de atualização do filtro 1 - Com as estimativas misturadas
     [x1, P1,residual1, S1, K] = kalman_update(H1, R, z, x1, P1);
 
-    % perform predict step using the mixed initial conditions
+    % Passo de predição do filtro 2 - Com as estimativas misturadas
     [x2, P2] = kalman_predict(F2, Q2, 0, 0, x2mix, P2mix);
 
-    % Update in kalman filter 2
+    % Passo de atualização do filtro 2 - Com as estimativas misturadas
     [x2, P2, residual2, S2, K] = kalman_update(H2, R, z, x2, P2);
 
     % Likelihood
     L =  [mvnpdf(zeros(size(residual1)), residual1, S1), mvnpdf(zeros(size(residual2)), residual2, S2)];
 
 
-     % 4 Mode probability update
+    % 4 Atualização da probabilidade de cada modo
+    % Equação de Bayes - Prio*Likelihood/Normalization
+    mu = cbar.*L;
+    mu = mu/sum(mu, 2);
 
-     mu = cbar.*L;
-     mu = mu/sum(mu, 2);
+    % 5 Estimativa dos estados e covariância.
 
-     % 5 Estimate and covariance combination.
-
-     % compute mixed IMM state and covariance
-     x = zeros(length(x0), 1);
-     P = zeros(2,2);
-     x = x1*mu(1) + x2*mu(2);
-     y1 = x1-x;
-     y2 = x2-x;
-     P = mu(1)*(y1*y1' + P1) + mu(2)*(y2*y2' + P2);
+    x = zeros(length(x0), 1);
+    P = zeros(2,2);
+    x = x1*mu(1) + x2*mu(2);
+    y1 = x1-x;
+    y2 = x2-x;
+    P = mu(1)*(y1*y1' + P1) + mu(2)*(y2*y2' + P2);
 
 
     x_est(:, i) = x;

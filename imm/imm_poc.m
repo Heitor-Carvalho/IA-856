@@ -1,22 +1,24 @@
-%% IMM - Trabalho final
+%% Trabalho final - Interacting Multiple Model
 
-reta = load('data_ex/reta');
-curva = load('data_ex/curva_suave');
-manobra = load('data_ex/manobra');
-zv_reta = reta.x_m';
-zv_curva = curva.x_m';
+addpath('../kalman')
+
+reta       = load('../data_ex/reta');
+curva      = load('../data_ex/curva_suave');
+manobra    = load('../data_ex/manobra');
+zv_reta    = reta.x_m';
+zv_curva   = curva.x_m';
 zv_manobra = manobra.x_m';
 
 %% Estado inicial e modelo
 dt = 4;                                        % Intervalo de amostragem
 x0 = [-3; 0; 0; -3; 0; 0]*1e4;                 % Média inicial (escolhemos -3e4 para
                                                % posição inicial e zero para velocidade inicial)
-P0 = 1e4*eye(length(x0));                      % Matriz de covariância inicial (Alta Incerteza)
+P0 = 1e6*eye(length(x0));                      % Matriz de covariância inicial (Alta Incerteza)
 
 F1 = [1 dt 0;                                  % Modelo de velocidade quase constante
       0 1  0;
       0 0  0];
-F2 = [1 dt dt.^2/2; ...                        % Modelo de posição quase constante
+F2 = [1 dt dt.^2/2; ...                        % Modelo de aceleração quase constante
       0 1  dt;
       0 0  1];
 
@@ -26,7 +28,7 @@ Q1 = [0 0 0 0 0 0; ...                         % Modelo de ruído somente na com
       0 0 0 0 0 0; ...
       0 0 0 0 1 0; ...
       0 0 0 0 0 0];
-Q2 = [0 0 0 0 0 0; ...                         % Modelo de ruído somente na componente de velocidade
+Q2 = [0 0 0 0 0 0; ...                         % Modelo de ruído somente na componente de aceleração
       0 0 0 0 0 0; ...
       0 0 1 0 0 0; ...
       0 0 0 0 0 0; ...
@@ -100,6 +102,49 @@ figure(6)
 plot(mu_est_manobra', '.--')
 legend('Velocidade Constante', 'Aceleração Constante', 'Location', 'SouthOutside')
 grid
+
+%% Comparando o IMM com o filtro de Kalman (caso reta)
+M1 = [0.995 0.005; 0.005 0.995];
+M2 = [0.98 0.02; 0.02 0.98];
+M3 = [0.95 0.05; 0.05 0.95];
+
+[x_est_reta_m1, ~] = imm2(x0, P0, zv_reta, FF1, H1, Q1, FF2, H2, Q2, R, mu, M1);
+[x_est_reta_m2, ~] = imm2(x0, P0, zv_reta, FF1, H1, Q1, FF2, H2, Q2, R, mu, M2);
+[x_est_reta_m3, ~] = imm2(x0, P0, zv_reta, FF1, H1, Q1, FF2, H2, Q2, R, mu, M2);
+
+[x_kalman_reta.x_est, ~, ~, ~, ~] = kalman_filter_wrapper(x0, P0, zv_reta, FF1, H1, Q1, R);
+
+start_sample = 15;
+mse_imm_m1 = mean( abs(x_est_reta_m1(1, :)-reta.x_c(:, 1)').^2 + abs(x_est_reta_m1(4, :) - reta.x_c(:, 2)').^2 );
+mse_imm_m2 = mean( abs(x_est_reta_m2(1, :)-reta.x_c(:, 1)').^2 + abs(x_est_reta_m2(4, :) - reta.x_c(:, 2)').^2 );
+mse_imm_m3 = mean( abs(x_est_reta_m3(1, :)-reta.x_c(:, 1)').^2 + abs(x_est_reta_m3(4, :) - reta.x_c(:, 2)').^2 );
+mse_kalman = mean( abs(x_kalman_reta.x_est(1, :)-reta.x_c(:, 1)').^2 + abs(x_kalman_reta.x_est(4, :) - reta.x_c(:, 2)').^2 );
+
+mse_str = sprintf('|  %.2f  |  %.2f  |  %.2f  |  %.2f  |', mse_kalman, mse_imm_m1, mse_imm_m2, mse_imm_m3)
+
+disp('|   Kalman     |  IMM - M1   |   IMM - M2  |  IMM - M3 |')
+disp(mse_str)
+
+% Como era esperado para este caso, o MSE do algorítmo IMM ficou sempre
+% acima do obtido pelo filtro de kalman, sendo este o limite inferior 
+% para este caso.
+% Também é possível ver que neste caso, ao usar matrizes cuja probabilidade de 
+% transição entre os modelos é mais baixa, o MSE obtido pelo algorítmo IMM fica 
+% mais próximo ao obtido pelo filtro de kalman. 
+% Isto se deve ao fato do filtro se comportar mais como o modelo 1
+% (velocidade constante) ao diminuirmos a probabilidade de transição de
+% estado.
+
+%% Comentários e conclusão
+% Neste trabalho foi possível observar que ao usar múltiplos modelos com 
+% seus parâmetros ajustados adequadamente, pudemos alcançar um ótimo
+% trade-off entre filtragem e tracking. Verificamos que os pesos dados a
+% cada modelo para estimativa final (correspondentes a probabilidade de
+% cada modelo), foram coerentes com o esperado. No caso onde o objeto se
+% movimentou com velocidade constante, pudemos ver que o modelo de
+% velocidade quase constante teve maior probabilidade. Já na situação de
+% manobra pode-se ver que as probabilidades se inverteram e o modelo de
+% aceleração quase constante teve maior peso na estimativa final. 
 
 %%
 close all
